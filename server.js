@@ -6,6 +6,13 @@ var express = require("express"),
 var client = new pg.Client(secrets.conString);
 client.connect();
 
+var response404 = {
+  meta: {
+    status: 404,
+    queryHasResult: false
+  }
+};
+
 app.get("/grt/api/intersection", function(req, res) {
   var loc1, loc2, stopNum, strict, dbQuery, sanitizedInput;
 
@@ -42,21 +49,79 @@ app.get("/grt/api/intersection", function(req, res) {
   }
 
   client.query(dbQuery, sanitizedInput, function(err, result) {
-    var dataReturned;
-
     if (err) {
-      return res.status(404).send({meta: {status: 404}});
+      return res.status(404).send(response404);
     }
 
-    if (result.rows.length) {
-      dataReturned = true;
-    }
+    var dataReturned = (result.rows.length) ? true : false;
 
     res.status(200).json({
-      meta: {status: 200, queryHasResult: dataReturned},
-      data: result.rows
+      meta: {
+        status: 200,
+        queryHasResult: dataReturned
+      },
+      result: {
+        data: result.rows
+      }
     });
   });
 });
+
+app.get("/grt/api/bus/:number", function(req, res) {
+  var number = req.params.number,
+    names = (req.query.names === "1") ? true : false,
+    stops = (req.query.stops === "1") ? true : false,
+    dbQuery;
+
+  if (names) {
+    if (stops) {
+      dbQuery = "SELECT Intersections.StopNumber, Intersections.Location1, Intersections.Location2 \
+                 FROM BusesIntersections INNER JOIN Intersections ON (Intersections.StopNumber = \
+                 BusesIntersections.StopNumber) WHERE BusNumber = ($1)";
+    } else {
+      dbQuery = "SELECT Intersections.Location1, Intersections.Location2 FROM BusesIntersections \
+                 INNER JOIN Intersections ON (Intersections.StopNumber = BusesIntersections.StopNumber) \
+                 WHERE BusNumber = ($1)";
+    }
+  } else {
+    if (stops) {
+      dbQuery = "SELECT Intersections.StopNumber FROM BusesIntersections INNER JOIN Intersections \
+                 ON (Intersections.StopNumber = BusesIntersections.StopNumber) WHERE BusNumber = ($1)";
+    }
+  }
+
+  client.query("SELECT Description FROM Buses WHERE Number = ($1)", number, function(err, result) {
+    // if the bus doesn't exist, respond with 404
+    if (err || !result.rows.length) {
+      return res.status(404).send(response404);
+    }
+
+    var description = result.rows[0].description,
+      response = {
+        meta: {
+          status: 200,
+          queryHasResult: true,
+        },
+        result: {
+          description: description,
+          data: []
+        }
+      };
+
+    if (dbQuery) {
+      client.query(dbQuery, [number], function(err, result) {
+        if (err) {
+          res.status(404).send(response404);
+        }
+        response.result.data = result.rows;
+        res.json(response);
+      });
+    } else {
+      res.json(response);
+    }
+  });
+});
+
+app.get("/grt/api/")
 
 app.listen(4000);
