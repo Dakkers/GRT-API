@@ -13,12 +13,71 @@ var response404 = {
   }
 };
 
-app.get("/grt/api/intersection", function(req, res) {
+app.get("/grt/api/intersections/buses", function(req, res) {
   var loc1, loc2, stopNum, strict, dbQuery, sanitizedInput;
 
   if (!req.query.loc1) {
-    res.status(404).send({meta: {status: 404}});
-    return;
+    return res.status(404).send(response404);
+  }
+
+  loc1 = req.query.loc1;
+  loc2 = req.query.loc2 || "NULL";
+  stopNum = req.query.stopnum || 0;
+  strict  = (req.query.strict === "1") ? true : false;
+
+  if (loc2 === "NULL") {
+    if (stopNum === 0) {
+      dbQuery = "SELECT Location2, Intersections.StopNumber, BusNumber FROM Intersections INNER \
+                 JOIN BusesIntersections ON (Intersections.StopNumber = \
+                 BusesIntersections.StopNumber) WHERE Location1 = ($1)";
+      sanitizedInput = [loc1];
+    } else {
+      dbQuery = "SELECT Location2, BusNumber FROM Intersections INNER JOIN BusesIntersections ON \
+                 (Intersections.StopNumber = BusesIntersections.StopNumber) WHERE Location1 = ($1) \
+                 AND Intersections.StopNumber = ($2)";
+      sanitizedInput = [loc1, stopNum];
+    }
+  } else {
+    if (stopNum === 0) {
+      dbQuery = "SELECT Intersections.StopNumber, BusNumber FROM Intersections INNER JOIN \
+                 BusesIntersections ON (Intersections.StopNumber = BusesIntersections.StopNumber) \
+                 WHERE Location1 = ($1) AND Location2 = ($2)";
+      if (!strict) {
+        dbQuery += " OR (Location1 = ($2) AND Location2 = ($1))";
+      }
+      sanitizedInput = [loc1, loc2];
+    } else {
+      dbQuery = "SELECT BusNumber FROM Intersections INNER JOIN BusesIntersections ON \
+                 (Intersections.StopNumber = BusesIntersections.StopNumber) WHERE Location1 = ($1) \
+                 AND Location2 = ($2) AND Intersections.StopNumber = ($3)";
+      sanitizedInput = [loc1, loc2, stopNum];
+    }
+  }
+
+  client.query(dbQuery, sanitizedInput, function(err, result) {
+    if (err) {
+      return res.status(404).json(response404);
+    }
+
+    var dataReturned = (result.rows.length) ? true : false;
+
+    res.json({
+      meta: {
+        status: 200,
+        queryHasResult: dataReturned
+      },
+      result: {
+        data: result.rows
+      }
+    });
+  });
+});
+
+app.get("/grt/api/intersections", function(req, res) {
+  var loc1, loc2, stopNum, strict, dbQuery, sanitizedInput;
+
+  if (!req.query.loc1) {
+    return res.status(404).send(response404);
   }
 
   loc1 = req.query.loc1;
@@ -67,7 +126,7 @@ app.get("/grt/api/intersection", function(req, res) {
   });
 });
 
-app.get("/grt/api/bus/:number", function(req, res) {
+app.get("/grt/api/buses/:number", function(req, res) {
   var number = req.params.number,
     names = (req.query.names === "1") ? true : false,
     stops = (req.query.stops === "1") ? true : false,
@@ -111,7 +170,7 @@ app.get("/grt/api/bus/:number", function(req, res) {
     if (dbQuery) {
       client.query(dbQuery, [number], function(err, result) {
         if (err) {
-          res.status(404).send(response404);
+          return res.status(404).send(response404);
         }
         response.result.data = result.rows;
         res.json(response);
@@ -121,7 +180,5 @@ app.get("/grt/api/bus/:number", function(req, res) {
     }
   });
 });
-
-app.get("/grt/api/")
 
 app.listen(4000);
