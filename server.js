@@ -82,7 +82,7 @@ app.get("/grt/api/intersections", function(req, res) {
 
   loc1 = req.query.loc1;
   loc2 = req.query.loc2 || "NULL";
-  stopNum = req.query.stopnum || 0;
+  stopNum = req.query.stopnumber || 0;
   strict  = (req.query.strict === "1") ? true : false;
 
   if (loc2 === "NULL") {
